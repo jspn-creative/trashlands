@@ -16,25 +16,20 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-const ORDINALS = ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH", "7TH", "8TH"];
+const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"];
 
 async function boot(): Promise<void> {
   registerSW({ immediate: true });
 
-  // Canvas text (HUD) needs the display font ready before Pixi bakes glyphs.
   try {
-    await Promise.all([
-      document.fonts.load('800 28px "Baloo 2"'),
-      document.fonts.load('600 16px "Baloo 2"'),
-    ]);
-  } catch {
-    // Font failed to load — Verdana fallback kicks in everywhere.
-  }
+    await Promise.all([document.fonts.load('800 28px "Baloo 2"'), document.fonts.load('600 16px "Baloo 2"')]);
+  } catch {}
 
   const app = new Application();
   await app.init({
     resizeTo: window,
-    background: 0xb5c078,
+    // Matches --edge in index.html, so any gap reads as screen edge, not a green border.
+    background: 0x1c160f,
     antialias: true,
     resolution: Math.min(window.devicePixelRatio || 1, 2),
     autoDensity: true,
@@ -43,11 +38,15 @@ async function boot(): Promise<void> {
 
   const save: SaveData = await loadSave();
   const sound = new Sound();
-  sound.enabled = save.sound;
-  const music = new Music();
-  music.enabled = save.music;
-  // Both audio paths are gated on a gesture: the WebAudio context needs an
-  // unlock, and the music elements need their blocked play() retried.
+  const music = new Music(sound);
+  // Master mute wins over both channel toggles; clearing it restores them.
+  const applyAudioPrefs = () => {
+    sound.enabled = save.sound && !save.muted;
+    if (!sound.enabled) sound.stopAmbient();
+    music.setEnabled(save.music && !save.muted);
+  };
+  sound.enabled = save.sound && !save.muted;
+  music.enabled = save.music && !save.muted;
   const input = new Input(document.body, () => {
     sound.unlock();
     music.resume();
@@ -79,13 +78,27 @@ async function boot(): Promise<void> {
   shakeToggle.checked = save.shake;
   soundToggle.addEventListener("change", () => {
     save.sound = soundToggle.checked;
-    sound.enabled = save.sound;
-    if (!save.sound) sound.stopAmbient();
+    applyAudioPrefs();
     persistSave(save);
   });
   musicToggle.addEventListener("change", () => {
     save.music = musicToggle.checked;
-    music.setEnabled(save.music);
+    applyAudioPrefs();
+    persistSave(save);
+  });
+
+  // Home-screen quick mute.
+  const muteBtn = $("mute") as HTMLButtonElement;
+  const renderMute = () => {
+    muteBtn.textContent = save.muted ? "🔇" : "🔊";
+    muteBtn.setAttribute("aria-pressed", String(save.muted));
+    muteBtn.setAttribute("aria-label", save.muted ? "Unmute all audio" : "Mute all audio");
+  };
+  renderMute();
+  muteBtn.addEventListener("click", () => {
+    save.muted = !save.muted;
+    applyAudioPrefs();
+    renderMute();
     persistSave(save);
   });
   shakeToggle.addEventListener("change", () => {
@@ -121,10 +134,7 @@ async function boot(): Promise<void> {
     const cap = progress.querySelector<HTMLElement>(".cap")!;
     const pts = Math.min(save.leaguePoints, PROMOTE_AT);
     fill.style.width = `${(pts / PROMOTE_AT) * 100}%`;
-    cap.innerHTML =
-      save.league >= MAX_LEAGUE
-        ? `<b>${LEAGUES[save.league]}</b> — top of the ladder!`
-        : `<b>${pts}/${PROMOTE_AT} pts</b> to ${LEAGUES[save.league + 1]}`;
+    cap.innerHTML = save.league >= MAX_LEAGUE ? `<b>${LEAGUES[save.league]}</b> — top of the ladder!` : `<b>${pts}/${PROMOTE_AT} pts</b> to ${LEAGUES[save.league + 1]}`;
   };
   renderLadder("ladder-home", "progress-home");
 
@@ -134,7 +144,7 @@ async function boot(): Promise<void> {
   };
   updateXp();
 
-  // ---------- Map selector (M4) ----------
+  // Map selector
   const mapUnlocked = (id: string) => save.bestLeague >= mapById(id).unlockLeague;
   const renderMaps = () => {
     if (!mapUnlocked(save.map)) save.map = "junkyard";
@@ -144,9 +154,7 @@ async function boot(): Promise<void> {
       const open = save.bestLeague >= m.unlockLeague;
       const card = document.createElement("div");
       card.className = `map-card${save.map === m.id ? " selected" : ""}${open ? "" : " locked"}`;
-      card.innerHTML =
-        `<div class="mn">${open ? "" : "🔒 "}${m.name}</div>` +
-        `<div class="md">${open ? m.desc : `Reach ${LEAGUES[m.unlockLeague]} to unlock`}</div>`;
+      card.innerHTML = `<div class="mn">${open ? "" : "🔒 "}${m.name}</div>` + `<div class="md">${open ? m.desc : `Reach ${LEAGUES[m.unlockLeague]} to unlock`}</div>`;
       if (open) {
         card.addEventListener("click", () => {
           // Tapping the map you're already on is the express lane into the match.
@@ -163,7 +171,7 @@ async function boot(): Promise<void> {
     }
   };
 
-  // ---------- Locker (equip unlocked cosmetics) ----------
+  // Locker
   const SWATCH: Record<string, string> = {
     compost: "🍃",
     glitter: "✨",
@@ -178,8 +186,7 @@ async function boot(): Promise<void> {
     { id: "", kind: "trail" as const, name: "No Trail", desc: "A clean getaway", xp: 0 },
     { id: "", kind: "sound" as const, name: "Classic Pops", desc: "The original crunch", xp: 0 },
   ];
-  const equippedId = (kind: string) =>
-    kind === "skin" ? save.skin : kind === "trail" ? save.trail : save.popStyle;
+  const equippedId = (kind: string) => (kind === "skin" ? save.skin : kind === "trail" ? save.trail : save.popStyle);
 
   const renderLocker = () => {
     const grid = $("locker-grid");
@@ -191,11 +198,7 @@ async function boot(): Promise<void> {
       card.className = `unlock-card${isEquipped ? " equipped" : ""}${isLocked ? " locked" : ""}`;
       const skin = u.kind === "skin" ? SKINS[u.id] : null;
       const swatchBg = skin ? `#${skin.base.toString(16).padStart(6, "0")}` : "rgba(0,0,0,0.35)";
-      card.innerHTML =
-        `<div class="swatch" style="background:${swatchBg}">${SWATCH[u.id] ?? ""}</div>` +
-        `<div class="kind">${u.kind}</div><div class="n">${u.name}</div>` +
-        `<div class="d">${u.desc}</div>` +
-        `<div class="s">${isLocked ? `🔒 ${u.xp.toLocaleString()} XP` : isEquipped ? "✔ EQUIPPED" : "Tap to equip"}</div>`;
+      card.innerHTML = `<div class="swatch" style="background:${swatchBg}">${SWATCH[u.id] ?? ""}</div>` + `<div class="kind">${u.kind}</div><div class="n">${u.name}</div>` + `<div class="d">${u.desc}</div>` + `<div class="s">${isLocked ? `🔒 ${u.xp.toLocaleString()} XP` : isEquipped ? "✔ EQUIPPED" : "Tap to equip"}</div>`;
       if (!isLocked && !isEquipped) {
         card.addEventListener("click", () => {
           if (u.kind === "skin") save.skin = u.id;
@@ -212,7 +215,7 @@ async function boot(): Promise<void> {
     }
   };
 
-  // ---------- Stats page + league badges ----------
+  // Stats
   const BADGE_ICONS = ["🌱", "🚮", "🗑️", "⚙️", "☠️", "👑"];
   const renderStats = () => {
     const rows = [
@@ -226,25 +229,16 @@ async function boot(): Promise<void> {
       ["Best combo", save.statBestCombo >= 2 ? `×${save.statBestCombo}` : "—"],
       ["Biggest blob", CLASSES[save.statBiggestClass - 1].name],
     ];
-    $("stats-grid").innerHTML = rows
-      .map(([k, v]) => `<div class="stat-card"><div class="k">${k}</div><div class="v">${v}</div></div>`)
-      .join("");
-    $("badges").innerHTML = LEAGUES.map(
-      (name, i) =>
-        `<div class="badge${i <= save.bestLeague ? " earned" : ""}"><span class="i">${BADGE_ICONS[i]}</span>${name}</div>`,
-    ).join("");
+    $("stats-grid").innerHTML = rows.map(([k, v]) => `<div class="stat-card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+    $("badges").innerHTML = LEAGUES.map((name, i) => `<div class="badge${i <= save.bestLeague ? " earned" : ""}"><span class="i">${BADGE_ICONS[i]}</span>${name}</div>`).join("");
 
     $("achievements").innerHTML = ACHIEVEMENTS.map((a) => {
       const earned = save.achievementsUnlocked.includes(a.id);
-      return (
-        `<div class="ach-card${earned ? " earned" : ""}">` +
-        `<div class="i">${a.icon}</div><div class="n">${a.name}</div><div class="d">${a.desc}</div>` +
-        `</div>`
-      );
+      return `<div class="ach-card${earned ? " earned" : ""}">` + `<div class="i">${a.icon}</div><div class="n">${a.name}</div><div class="d">${a.desc}</div>` + `</div>`;
     }).join("");
   };
 
-  // ---------- Daily seeded run (M10) ----------
+  // Daily run
   const renderDaily = () => {
     const today = dayKey();
     if (save.dailyDate !== today) {
@@ -255,8 +249,7 @@ async function boot(): Promise<void> {
     }
     $("daily-date").textContent = today;
     $("daily-streak").textContent = `🔥 ${save.dailyStreak} day${save.dailyStreak === 1 ? "" : "s"} streak`;
-    $("daily-best").textContent =
-      save.dailyBestScore > 0 ? `Best today: ${save.dailyBestScore}` : "No run yet today";
+    $("daily-best").textContent = save.dailyBestScore > 0 ? `Best today: ${save.dailyBestScore}` : "No run yet today";
     $("daily-challenges").innerHTML = dailyChallenges(today)
       .map((c) => {
         const done = save.dailyDoneIds.includes(c.id);
@@ -274,7 +267,7 @@ async function boot(): Promise<void> {
     home.classList.remove("hidden");
   };
 
-  // The overflow drawer behind "MORE" — keeps the home screen to one button row.
+  // Overflow drawer behind the More button, so home stays a single button row.
   const setMoreOpen = (open: boolean) => {
     moreRow.hidden = !open;
     moreBtn.setAttribute("aria-expanded", String(open));
@@ -301,7 +294,7 @@ async function boot(): Promise<void> {
   });
   $("daily-back").addEventListener("click", () => closePanel(dailyPanel));
 
-  // ---------- Save export / import (PRD §4.1 — replaces accounts) ----------
+  // Save export / import
   $("export-save").addEventListener("click", () => {
     const file = new Blob([JSON.stringify(save, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(file);
@@ -329,9 +322,9 @@ async function boot(): Promise<void> {
         }
       }
       persistSave(save);
-      sound.enabled = save.sound;
       sound.popStyle = unlocked(save.popStyle, save.xp) ? save.popStyle : "";
-      music.setEnabled(save.music);
+      applyAudioPrefs();
+      renderMute();
       soundToggle.checked = save.sound;
       musicToggle.checked = save.music;
       shakeToggle.checked = save.shake;
@@ -353,12 +346,8 @@ async function boot(): Promise<void> {
     music.setDucked(paused);
   };
 
-  // Go fullscreen on touch devices (must run inside a user-gesture handler).
-  // In-browser iPhone Safari has no element fullscreen API — there the answer
-  // is the home-screen install, so we surface a hint instead.
-  const isStandalone = () =>
-    window.matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches ||
-    (navigator as unknown as { standalone?: boolean }).standalone === true;
+  // Fullscreen on touch devices; must run inside a user-gesture handler. In-browser iPhone Safari has no element fullscreen API, so there we surface the install hint instead.
+  const isStandalone = () => window.matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
   const tryFullscreen = () => {
     if (!window.matchMedia("(pointer: coarse)").matches) return;
     if (isStandalone() || document.fullscreenElement) return;
@@ -368,8 +357,7 @@ async function boot(): Promise<void> {
     const req = el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el);
     void req?.()?.catch(() => {});
   };
-  const isIphoneBrowser =
-    /iP(hone|od)/.test(navigator.userAgent) && !isStandalone();
+  const isIphoneBrowser = /iP(hone|od)/.test(navigator.userAgent) && !isStandalone();
   ($("ios-hint") as HTMLElement).hidden = !isIphoneBrowser;
 
   // Zen, daily, or match — remembered so "Restart"/"Play Again" repeat the same mode (M5, M10).
@@ -379,28 +367,15 @@ async function boot(): Promise<void> {
   let pendingZen = false;
 
   const hideOverlays = () => {
-    for (const el of [
-      home,
-      results,
-      pauseOverlay,
-      locker,
-      statsPanel,
-      dailyPanel,
-      mapSelect,
-      helpPanel,
-      settingsPanel,
-    ]) {
+    for (const el of [home, results, pauseOverlay, locker, statsPanel, dailyPanel, mapSelect, helpPanel, settingsPanel]) {
       el.classList.add("hidden");
     }
   };
 
-  // PLAY and ZEN both land here first — the map list moved off the home screen
-  // so the menu fits a landscape phone.
+  // Play and Zen both land here first; the map list moved off home so the menu fits a landscape phone.
   const openMapSelect = (zen: boolean) => {
     pendingZen = zen;
-    $("mapselect-mode").textContent = zen
-      ? "🧘 Zen — no clock, no rivals, just cleaning"
-      : `🏆 League match — 2:00 · ${PLAYER_LIVES} lives · ${BOT_COUNT} rivals`;
+    $("mapselect-mode").textContent = zen ? "🧘 Zen — no clock, no rivals, just cleaning" : `🏆 League match — 2:00 · ${PLAYER_LIVES} lives · ${BOT_COUNT} rivals`;
     renderMaps();
     setMoreOpen(false);
     openPanel(mapSelect);
@@ -427,8 +402,7 @@ async function boot(): Promise<void> {
     music.play("game");
   };
 
-  // Fixed per-day seed on the canonical map — everyone sees the same layout
-  // today, and retries reuse it so "personal best" actually means something.
+  // Fixed per-day seed on the canonical map, so everyone shares today's layout and retries reuse it.
   const startDaily = () => {
     zenMode = false;
     dailyMode = true;
@@ -454,8 +428,7 @@ async function boot(): Promise<void> {
     game?.destroy();
     game = null;
     dailyMode = false;
-    // Results sits after home in the DOM, so leaving it visible would paint
-    // over the menu — this is why the Menu button used to "do nothing".
+    // Results sits after home in the DOM, so leaving it visible paints over the menu.
     hideOverlays();
     pauseBtn.style.display = "none";
     renderLadder("ladder-home", "progress-home");
@@ -483,9 +456,7 @@ async function boot(): Promise<void> {
     }
 
     // XP + lifetime stats (M3). Zen earns at half rate so the ladder matters.
-    const gainedXp = r.zen
-      ? Math.max(5, Math.round(r.score / 16) + r.zonesCleaned * 10)
-      : xpForMatch(r);
+    const gainedXp = r.zen ? Math.max(5, Math.round(r.score / 16) + r.zonesCleaned * 10) : xpForMatch(r);
     const prevXp = save.xp;
     save.xp += gainedXp;
     save.statTrash += r.trashEaten;
@@ -533,39 +504,30 @@ async function boot(): Promise<void> {
     const dailyLine = $("results-daily");
     dailyLine.hidden = !dailyMode;
     if (dailyMode) {
-      dailyLine.textContent = dailyAllDone
-        ? `🗓️ Daily complete! 🔥 ${save.dailyStreak}-day streak`
-        : `🗓️ Daily run · 🔥 ${save.dailyStreak}-day streak · best today ${save.dailyBestScore}`;
+      dailyLine.textContent = dailyAllDone ? `🗓️ Daily complete! 🔥 ${save.dailyStreak}-day streak` : `🗓️ Daily run · 🔥 ${save.dailyStreak}-day streak · best today ${save.dailyBestScore}`;
     }
 
     const achBanner = $("results-achievement");
     achBanner.hidden = earned.length === 0;
     if (earned.length > 0) {
-      achBanner.textContent = `🏆 ACHIEVEMENT: ${earned.map((a) => `${a.icon} ${a.name}`).join(" + ")}`;
+      achBanner.textContent = `🏆 Achievement: ${earned.map((a) => `${a.icon} ${a.name}`).join(" + ")}`;
     }
     const fresh = UNLOCKS.filter((u) => u.xp > prevXp && u.xp <= save.xp);
     const banner = $("results-unlock");
     banner.hidden = fresh.length === 0;
     if (fresh.length > 0) {
-      banner.textContent = `🎉 NEW UNLOCK: ${fresh.map((u) => u.name).join(" + ")} — check the Locker!`;
+      banner.textContent = `🎉 New unlock: ${fresh.map((u) => u.name).join(" + ")} — check the Locker!`;
     }
 
     const mins = Math.floor(r.duration / 60);
     const secs = String(r.duration % 60).padStart(2, "0");
     if (r.zen) {
-      $("results-title").textContent =
-        r.cleanedPct >= 100 ? "SPARKLING CLEAN! ✨" : "ZEN SESSION";
+      $("results-title").textContent = r.cleanedPct >= 100 ? "Sparkling clean! ✨" : "Zen session";
       $("results-sub").textContent = `${r.cleanedPct}% cleaned in ${mins}:${secs}`;
     } else {
-      // Placement always shows here — the stat grid no longer carries it.
-      $("results-title").textContent =
-        r.livesLeft === 0
-          ? `OUT OF LIVES · ${ORDINALS[r.placement - 1]}`
-          : `${ORDINALS[r.placement - 1]} PLACE`;
-      $("results-sub").textContent =
-        r.score > prevBest && r.score > 0
-          ? `Score: ${r.score} — new best!`
-          : `Score: ${r.score} · Best: ${save.bestScore}`;
+      // Placement always shows here; the stat grid no longer carries it.
+      $("results-title").textContent = r.livesLeft === 0 ? `Out of lives · ${ORDINALS[r.placement - 1]}` : `${ORDINALS[r.placement - 1]} place`;
+      $("results-sub").textContent = r.score > prevBest && r.score > 0 ? `Score: ${r.score} — new best!` : `Score: ${r.score} · Best: ${save.bestScore}`;
     }
 
     // Six cards either way; zen swaps the competitive rows for session ones.
@@ -584,9 +546,7 @@ async function boot(): Promise<void> {
       ["Map cleaned", `${r.cleanedPct}%`],
       ...(r.zen ? [["Best combo", r.bestCombo >= 2 ? `×${r.bestCombo}` : "—"]] : [["Lives remaining", String(r.livesLeft)]]),
     ];
-    $("results-stats").innerHTML = stats
-      .map(([k, v]) => `<div class="stat-card"><div class="k">${k}</div><div class="v">${v}</div></div>`)
-      .join("");
+    $("results-stats").innerHTML = stats.map(([k, v]) => `<div class="stat-card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 
     // League standing is match-only; zen hides the whole ladder block.
     $("results-league").style.display = r.zen ? "none" : "";
@@ -595,15 +555,13 @@ async function boot(): Promise<void> {
     if (ladder) {
       const sign = ladder.delta >= 0 ? "+" : "";
       let leagueMsg = `${sign}${ladder.delta} league pts`;
-      if (ladder.promoted) leagueMsg = `⬆ PROMOTED to ${LEAGUES[ladder.league]}!`;
+      if (ladder.promoted) leagueMsg = `⬆ Promoted to ${LEAGUES[ladder.league]}!`;
       if (ladder.demoted) leagueMsg = `⬇ Demoted to ${LEAGUES[ladder.league]} (${sign}${ladder.delta} pts)`;
       $("results-league").textContent = leagueMsg;
       renderLadder("ladder-results", "progress-results");
     }
 
-    ($("install") as HTMLButtonElement).hidden = !(
-      installEvent && save.matchesPlayed >= 2 && !save.installDismissed
-    );
+    ($("install") as HTMLButtonElement).hidden = !(installEvent && save.matchesPlayed >= 2 && !save.installDismissed);
 
     results.classList.remove("hidden");
   };

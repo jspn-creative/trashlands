@@ -1,5 +1,6 @@
 import { Container, Graphics, Text, TextStyle } from "pixi.js";
 import { CLASSES, PLAYER_LIVES } from "./config";
+import { safeArea } from "./safearea";
 
 const FONT = ["Baloo 2", "Verdana", "sans-serif"];
 const BAR_H = 16;
@@ -43,6 +44,8 @@ export class Hud {
   private readonly lbPanel: Graphics;
   private readonly lbTexts: Text[] = [];
   private lastScore = -1;
+  private lastTopY = -1;
+  private lastInsetLeft = -1;
   private lastClass = -1;
   private lastTime = -1;
   private lastLives = -1;
@@ -161,12 +164,20 @@ export class Hud {
     shieldTime = 0,
   ): void {
     const zenMode = zenPct >= 0;
-    if (score !== this.lastScore) {
+    // Clear the notch, plus a flat 8px bump; the inset is 0 on desktop, so there that bump is the only change.
+    const inset = safeArea();
+    const topY = inset.top + 8;
+
+    // The pill only needs rebuilding when its width or origin moves, and rotating changes the inset.
+    if (score !== this.lastScore || topY !== this.lastTopY || inset.left !== this.lastInsetLeft) {
       this.lastScore = score;
+      this.lastTopY = topY;
+      this.lastInsetLeft = inset.left;
       this.scoreText.text = String(score);
+      this.scoreText.position.set(26 + inset.left, topY + 12);
       this.scorePanel
         .clear()
-        .roundRect(12, 10, this.scoreText.width + 30, 42, 21)
+        .roundRect(12 + inset.left, topY + 10, this.scoreText.width + 30, 42, 21)
         .fill({ color: 0x2f2418, alpha: 0.55 });
     }
 
@@ -176,10 +187,10 @@ export class Hud {
       this.timerText.text = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
       this.timerText.style.fill = !zenMode && secs <= 10 ? 0xff6b5b : 0xffffff;
     }
-    this.timerText.position.set(screenW / 2, 12);
+    this.timerText.position.set(screenW / 2, topY + 12);
     this.timerPanel
       .clear()
-      .roundRect(screenW / 2 - 52, 10, 104, 42, 21)
+      .roundRect(screenW / 2 - 52, topY + 10, 104, 42, 21)
       .fill({ color: 0x2f2418, alpha: 0.55 });
 
     const narrow = screenW < NARROW;
@@ -191,8 +202,8 @@ export class Hud {
     }
     const barW = narrow ? Math.min(230, screenW - 170) : 260;
     const barX = (screenW - barW) / 2;
-    const barY = screenH - 38;
-    this.classText.position.set(screenW / 2, screenH - 66);
+    const barY = screenH - 38 - inset.bottom;
+    this.classText.position.set(screenW / 2, screenH - 66 - inset.bottom);
     this.barG
       .clear()
       .roundRect(barX, barY, barW, BAR_H, BAR_H / 2)
@@ -233,7 +244,7 @@ export class Hud {
       }
     }
     // Lives live under the score pill so they never collide with the bottom bar.
-    this.livesG.position.set(0, 76);
+    this.livesG.position.set(inset.left, topY + 76);
     this.livesG.visible = !zenMode;
 
     // Active power-up timers, one row under lives.
@@ -247,6 +258,7 @@ export class Hud {
       this.lastBuffs = buffsStr;
       this.buffsText.text = buffsStr;
     }
+    this.buffsText.position.set(14 + inset.left, topY + 106);
 
     // Zen: cleaning progress rides under the timer pill.
     this.zenText.visible = zenMode;
@@ -254,7 +266,7 @@ export class Hud {
       this.lastZenPct = zenPct;
       this.zenText.text = `${zenPct}% cleaned`;
     }
-    if (zenMode) this.zenText.position.set(screenW / 2, 58);
+    if (zenMode) this.zenText.position.set(screenW / 2, topY + 58);
 
     // Combo meter: ×N above the class bar with a draining chain-timer ring.
     const showCombo = comboMult >= 2 && comboFrac > 0;
@@ -266,7 +278,7 @@ export class Hud {
         this.comboText.text = `×${comboMult}`;
         this.comboText.style.fill = COMBO_COLORS[comboMult] ?? 0xffd36b;
       }
-      const cy = screenH - 104;
+      const cy = screenH - 104 - inset.bottom;
       this.comboText.position.set(screenW / 2, cy);
       // Little pop when the tier changes, settling back to 1.
       const s = 1 + Math.max(0, comboFrac - 0.82) * 1.6;
@@ -281,9 +293,9 @@ export class Hud {
       this.lastCombo = 1;
     }
 
-    // On narrow screens the leaderboard drops below the timer pill.
+    // On narrow screens the leaderboard drops below the timer pill. Pinned top-right, so it needs both insets.
     const lbW = narrow ? 164 : 200;
-    const lbY = narrow ? 62 : 10;
+    const lbY = (narrow ? 62 : 10) + inset.top + 8;
     let visible = 0;
     for (let i = 0; i < LB_ROWS; i++) {
       const t = this.lbTexts[i];
@@ -294,14 +306,14 @@ export class Hud {
       }
       visible++;
       t.visible = true;
-      t.text = `${row.rank}. ${row.isPlayer ? "YOU" : row.name}   ${row.score}`;
+      t.text = `${row.rank}. ${row.isPlayer ? "You" : row.name}   ${row.score}`;
       if (row.isPlayer) t.style.fill = 0x9be86f;
-      t.position.set(screenW - 26, lbY + 8 + i * LB_ROW_H);
+      t.position.set(screenW - 26 - inset.right, lbY + 8 + i * LB_ROW_H);
     }
     this.lbPanel.clear();
     if (visible > 0) {
       this.lbPanel
-        .roundRect(screenW - lbW - 14, lbY, lbW, visible * LB_ROW_H + 16, 14)
+        .roundRect(screenW - lbW - 14 - inset.right, lbY, lbW, visible * LB_ROW_H + 16, 14)
         .fill({ color: 0x2f2418, alpha: 0.55 });
     }
 

@@ -42,7 +42,7 @@
       height: 100dvh;
       overflow: hidden;
       overscroll-behavior: none;
-      background: #b5c078;
+      background: var(--edge);
       touch-action: none;
       -webkit-user-select: none;
       user-select: none;
@@ -107,6 +107,40 @@
       box-shadow: 0 1px 0 rgba(47, 36, 24, 0.45);
     }
 
+    .corner-btn {
+      position: fixed;
+      top: max(18px, env(safe-area-inset-top));
+      right: max(18px, env(safe-area-inset-right));
+      width: 46px;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: inherit;
+      font-size: 21px;
+      line-height: 1;
+      border-radius: 50%;
+      color: var(--cream);
+      background: rgba(0, 0, 0, 0.34);
+      border: 2.5px solid rgba(242, 233, 228, 0.3);
+      cursor: pointer;
+      transition: background 0.12s ease, transform 0.09s ease, border-color 0.12s ease;
+    }
+
+    .corner-btn:hover {
+      background: rgba(255, 255, 255, 0.14);
+      transform: translateY(-1px);
+    }
+
+    .corner-btn:active {
+      transform: translateY(1px);
+    }
+
+    .corner-btn[aria-pressed="true"] {
+      border-color: rgba(244, 162, 89, 0.75);
+      color: var(--orange);
+    }
+
     .overlay {
       position: fixed;
       top: 0;
@@ -142,21 +176,19 @@
       overscroll-behavior: contain;
       touch-action: pan-y;
       padding:
-        max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+        max(30px, env(safe-area-inset-top)) max(30px, env(safe-area-inset-right)) max(30px, env(safe-area-inset-bottom)) max(30px, env(safe-area-inset-left));
       box-sizing: border-box;
+    }
+
+    .overlay>* {
+      max-width: min(900px, 100%);
     }
 
     .overlay::before,
     .overlay::after {
       content: "";
-    }
-
-    .overlay::before {
-      margin-bottom: auto;
-    }
-
-    .overlay::after {
-      margin-top: auto;
+      flex: 1 1 0;
+      min-height: 0;
     }
 
     .logo {
@@ -164,6 +196,7 @@
       flex-direction: column;
       align-items: center;
       gap: 2px;
+      width: 100%;
       animation: bob 3.4s ease-in-out infinite;
     }
 
@@ -181,8 +214,9 @@
 
     .overlay h1 {
       margin: 0;
-      /* Height-aware so a landscape phone doesn't get a logo taller than the screen. */
-      font-size: clamp(30px, min(10vw, 10dvh), 108px);
+      font-size: clamp(30px, min(13vw, 12dvh), 132px);
+      text-fit: grow;
+      width: 100%;
       font-weight: 800;
       line-height: 1;
       letter-spacing: 0.03em;
@@ -213,8 +247,15 @@
       text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
     }
 
+    /* Claims all leftover vertical room, then freezes at its max and hands the remainder back to the bookends. */
     .mascot {
-      width: clamp(56px, min(13vw, 14dvh), 130px);
+      flex: 60 1 0;
+      aspect-ratio: 1 / 1;
+      width: auto;
+      height: auto;
+      min-height: 54px;
+      max-height: min(40vw, 24dvh, 280px);
+      max-width: 40vw;
       margin: 2px 0;
       filter: drop-shadow(0 10px 10px rgba(0, 0, 0, 0.45));
       animation: bob 3.4s ease-in-out 0.4s infinite;
@@ -806,6 +847,18 @@
     }
 
     @media (max-height: 470px) {
+
+      /* 30px top and bottom is a big chunk of a landscape phone, so claw it back along with the gaps and the logo cap. */
+      .overlay {
+        padding-top: max(14px, env(safe-area-inset-top));
+        padding-bottom: max(14px, env(safe-area-inset-bottom));
+        gap: 4px;
+      }
+
+      .overlay h1 {
+        font-size: clamp(28px, min(13vw, 10dvh), 132px);
+      }
+
       .league-progress .cap {
         font-size: 12px;
       }
@@ -826,6 +879,11 @@
         display: none;
       }
     }
+
+    /* Utilities */
+    .uppercase {
+      text-transform: uppercase;
+    }
   </style>
 </head>
 
@@ -835,8 +893,9 @@
   <button id="pause-btn" type="button" aria-label="Pause">❚❚</button>
 
   <div id="home" class="overlay">
+    <button id="mute" class="corner-btn" type="button" aria-pressed="false" aria-label="Mute all audio">🔊</button>
     <div class="logo">
-      <h1 style="text-transform: uppercase;">Trashlands</h1>
+      <h1 class="uppercase">Trashlands</h1>
       <p class="tagline">You are dirt. Roll. Collect. Grow.</p>
     </div>
     <svg class="mascot" viewBox="0 0 100 100" aria-hidden="true">
@@ -865,10 +924,10 @@
     </div>
     <p class="xp-chip" id="xp-home">⭐ 0 XP</p>
     <div class="btn-row">
-      <button id="play" class="primary" type="button">PLAY</button>
-      <button id="zen" class="secondary" type="button">🧘 ZEN</button>
-      <button id="more" class="secondary" type="button" aria-expanded="false" aria-controls="more-row">
-        ☰ MORE
+      <button id="play" class="primary uppercase" type="button">Play</button>
+      <button id="zen" class="secondary uppercase" type="button">🧘 Zen</button>
+      <button id="more" class="secondary uppercase" type="button" aria-expanded="false" aria-controls="more-row">
+        ☰ More
       </button>
     </div>
     <div class="btn-row drawer" id="more-row" hidden>
@@ -881,21 +940,21 @@
   </div>
 
   <div id="mapselect" class="overlay hidden">
-    <h2>PICK A DUMP</h2>
+    <h2 class="uppercase">Pick a dump</h2>
     <p class="tagline" id="mapselect-mode"></p>
     <div class="maps" id="maps"></div>
     <p class="hint">Climb the league ladder to unlock the rest.</p>
     <div class="btn-row">
-      <button id="mapselect-start" class="primary" type="button">START</button>
+      <button id="mapselect-start" class="primary uppercase" type="button">Start</button>
       <button id="mapselect-back" class="secondary" type="button">← Back</button>
     </div>
   </div>
 
   <div id="help" class="overlay hidden">
-    <h2>HOW TO PLAY</h2>
+    <h2 class="uppercase">How to play</h2>
     <div class="legend">
       <span class="chip"><span class="ring eat"></span> You can eat it</span>
-      <span class="chip"><span class="ring danger"></span> It can eat YOU</span>
+      <span class="chip"><span class="ring danger"></span> It can eat you</span>
     </div>
     <p class="hint">Mouse, WASD, or thumb to steer · 2:00 on the clock · 3 lives · top the board</p>
     <p class="hint">Zen mode drops the clock, the lives and the rivals — just roll and clean.</p>
@@ -908,7 +967,7 @@
   </div>
 
   <div id="settings" class="overlay hidden">
-    <h2>SETTINGS</h2>
+    <h2 class="uppercase">Settings</h2>
     <div class="toggles">
       <label><input type="checkbox" id="toggle-sound" checked /> Sound effects</label>
       <label><input type="checkbox" id="toggle-music" checked /> Music</label>
@@ -920,7 +979,7 @@
   </div>
 
   <div id="results" class="overlay hidden">
-    <h2 id="results-title"></h2>
+    <h2 id="results-title" class="uppercase"></h2>
     <p class="tagline" id="results-sub"></p>
     <div class="stat-grid" id="results-stats"></div>
     <p id="results-xp"></p>
@@ -936,14 +995,14 @@
       <div class="cap"></div>
     </div>
     <div class="btn-row">
-      <button id="again" class="primary" type="button">PLAY AGAIN</button>
+      <button id="again" class="primary uppercase" type="button">Play again</button>
       <button id="menu" class="secondary" type="button">Menu</button>
       <button id="install" class="secondary" type="button" hidden>📥 Install</button>
     </div>
   </div>
 
   <div id="locker" class="overlay hidden">
-    <h2>LOCKER</h2>
+    <h2 class="uppercase">Locker</h2>
     <p class="xp-chip" id="xp-locker">⭐ 0 XP</p>
     <p class="hint">Earn XP every match — new looks unlock automatically. Tap to equip.</p>
     <div class="locker-grid" id="locker-grid"></div>
@@ -953,7 +1012,7 @@
   </div>
 
   <div id="stats" class="overlay hidden">
-    <h2>STATS</h2>
+    <h2 class="uppercase">Stats</h2>
     <div class="stat-grid" id="stats-grid"></div>
     <div class="badges" id="badges"></div>
     <div class="achievements" id="achievements"></div>
@@ -969,7 +1028,7 @@
   </div>
 
   <div id="daily" class="overlay hidden">
-    <h2>🗓️ DAILY RUN</h2>
+    <h2 class="uppercase">🗓️ Daily run</h2>
     <p class="tagline" id="daily-date"></p>
     <p class="xp-chip" id="daily-streak"></p>
     <p class="hint">Same trash layout for everyone today — retry as many times as you like. Junkyard Park, your current
@@ -977,7 +1036,7 @@
     <div class="challenge-list" id="daily-challenges"></div>
     <p class="hint" id="daily-best"></p>
     <div class="btn-row">
-      <button id="daily-play" class="primary" type="button">PLAY DAILY</button>
+      <button id="daily-play" class="primary uppercase" type="button">Play daily</button>
     </div>
     <div class="btn-row">
       <button id="daily-back" class="secondary" type="button">← Back</button>
@@ -985,9 +1044,9 @@
   </div>
 
   <div id="pause" class="overlay hidden">
-    <h2>PAUSED</h2>
+    <h2 class="uppercase">Paused</h2>
     <div class="btn-row">
-      <button id="resume" class="primary" type="button">RESUME</button>
+      <button id="resume" class="primary uppercase" type="button">Resume</button>
     </div>
     <div class="btn-row">
       <button id="finish" class="secondary" type="button" hidden>Finish &amp; see results</button>

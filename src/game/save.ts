@@ -8,6 +8,8 @@ export interface SaveData {
   sound: boolean;
   /** Looping background music (separate from the sound-effects toggle). */
   music: boolean;
+  /** Master mute from the home-screen corner button; overrides both channels without clobbering them. */
+  muted: boolean;
   shake: boolean;
   installDismissed: boolean;
   /** Lifetime XP — unlocks are derived from this total (M3). */
@@ -45,6 +47,7 @@ export const DEFAULT_SAVE: SaveData = {
   bestScore: 0,
   sound: true,
   music: true,
+  muted: false,
   shake: true,
   installDismissed: false,
   xp: 0,

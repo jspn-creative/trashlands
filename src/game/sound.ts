@@ -16,6 +16,11 @@ export class Sound {
     }
   }
 
+  /** Raw context for callers (Music) that must keep playing regardless of `enabled`, unlike `ready()`. */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
   private ready(): AudioContext | null {
     const ctx = this.ctx;
     if (!this.enabled || !ctx || ctx.state !== "running") return null;
