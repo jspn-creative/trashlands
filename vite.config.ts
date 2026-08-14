@@ -16,7 +16,7 @@ export default defineConfig({
         short_name: "Trashlands",
         description: "You are dirt. Roll. Collect. Grow.",
         theme_color: "#2f2418",
-        background_color: "#a8a06b",
+        background_color: "#1C160F",
         display: "standalone",
         orientation: "any",
         icons: [
@@ -32,6 +32,18 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: /\/audio\/.*\.mp3$/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "trashlands-audio",
+              expiration: { maxEntries: 8 },
+              rangeRequests: true,
+              cacheableResponse: { statuses: [0, 200, 206] },
+            },
+          },
+        ],
       },
     }),
   ],

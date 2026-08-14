@@ -6,6 +6,8 @@ export interface SaveData {
   matchesPlayed: number;
   bestScore: number;
   sound: boolean;
+  /** Looping background music (separate from the sound-effects toggle). */
+  music: boolean;
   shake: boolean;
   installDismissed: boolean;
   /** Lifetime XP — unlocks are derived from this total (M3). */
@@ -42,6 +44,7 @@ export const DEFAULT_SAVE: SaveData = {
   matchesPlayed: 0,
   bestScore: 0,
   sound: true,
+  music: true,
   shake: true,
   installDismissed: false,
   xp: 0,

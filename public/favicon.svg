@@ -1,8 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#9be86f"/>
-  <circle cx="32" cy="32" r="22" fill="#6f4e27" stroke="#4a3418" stroke-width="4"/>
-  <circle cx="26" cy="27" r="6" fill="#55391c"/>
-  <circle cx="39" cy="38" r="5" fill="#55391c"/>
-  <circle cx="38" cy="24" r="2.5" fill="#8a6a3f"/>
-  <circle cx="24" cy="40" r="2" fill="#8a6a3f"/>
+<svg xmlns="http://www.w3.org/2000/svg" id="a" version="1.1" viewBox="0 0 64 64">
+  <defs>
+    <style>
+      .st2{isolation:isolate}.st3{fill:#8a6a3f}.st5{stroke:#4a3418}.st5,.st7{fill:#fff}.st5{stroke-width:1.5px}.st2{fill:#55391c;opacity:.3}.st8{fill:#2f2418}
+    </style>
+  </defs>
+  <rect width="64" height="64" rx="9.5" ry="9.5" style="fill:#9be86f"/>
+  <ellipse cx="33.3" cy="55.6" rx="23.9" ry="4.4" style="opacity:.1;isolation:isolate"/>
+  <circle cx="32" cy="30.4" r="23.9" style="fill:#6f4e27;stroke:#4a3418;stroke-width:3px"/>
+  <circle cx="23.2" cy="39.2" r="5.7" class="st2"/>
+  <circle cx="42.1" cy="35.5" r="4.4" class="st2"/>
+  <circle cx="38.3" cy="45.5" r="2.5" class="st3"/>
+  <circle cx="19.4" cy="27.9" r="1.9" class="st3"/>
+  <ellipse cx="25.7" cy="25.4" class="st5" rx="4.7" ry="5.7"/>
+  <ellipse cx="38.9" cy="25.4" class="st5" rx="4.7" ry="5.7"/>
+  <circle cx="26.7" cy="26.3" r="2.4" class="st8"/>
+  <circle cx="39.9" cy="26.3" r="2.4" class="st8"/>
+  <circle cx="27.5" cy="25.4" r=".8" class="st7"/>
+  <circle cx="40.7" cy="25.4" r=".8" class="st7"/>
+  <path d="M28.2 35.5c2.9 2.5 5.9 2.5 8.8 0" style="stroke:#4a3418;stroke-width:3px;fill:none;stroke-linecap:round"/>
 </svg>

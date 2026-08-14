@@ -1,12 +1,13 @@
 import { Application } from "pixi.js";
 import { registerSW } from "virtual:pwa-register";
 import { ACHIEVEMENTS, newlyEarned } from "./game/achievements";
-import { CLASSES, PLAYER_LIVES } from "./game/config";
+import { BOT_COUNT, CLASSES, PLAYER_LIVES } from "./game/config";
 import { dailyChallenges, dailySeed, dayKey, prevDayKey } from "./game/daily";
 import { Game, MatchResult } from "./game/game";
 import { Input } from "./game/input";
 import { applyPlacement, LEAGUES, MAX_LEAGUE, PROMOTE_AT } from "./game/league";
 import { mapById, MAPS } from "./game/maps";
+import { Music } from "./game/music";
 import { DEFAULT_SAVE, loadSave, persistSave, SaveData } from "./game/save";
 import { Sound } from "./game/sound";
 import { SKINS, skinSpec, UNLOCKS, unlocked, xpForMatch } from "./game/unlocks";
@@ -43,7 +44,14 @@ async function boot(): Promise<void> {
   const save: SaveData = await loadSave();
   const sound = new Sound();
   sound.enabled = save.sound;
-  const input = new Input(document.body, () => sound.unlock());
+  const music = new Music();
+  music.enabled = save.music;
+  // Both audio paths are gated on a gesture: the WebAudio context needs an
+  // unlock, and the music elements need their blocked play() retried.
+  const input = new Input(document.body, () => {
+    sound.unlock();
+    music.resume();
+  });
 
   const $ = (id: string) => document.getElementById(id)!;
   const home = $("home");
@@ -52,6 +60,11 @@ async function boot(): Promise<void> {
   const locker = $("locker");
   const statsPanel = $("stats");
   const dailyPanel = $("daily");
+  const mapSelect = $("mapselect");
+  const helpPanel = $("help");
+  const settingsPanel = $("settings");
+  const moreRow = $("more-row") as HTMLElement;
+  const moreBtn = $("more") as HTMLButtonElement;
   const pauseBtn = $("pause-btn") as HTMLButtonElement;
   const isOpen = (el: HTMLElement) => !el.classList.contains("hidden");
 
@@ -59,13 +72,20 @@ async function boot(): Promise<void> {
 
   // Settings toggles.
   const soundToggle = $("toggle-sound") as HTMLInputElement;
+  const musicToggle = $("toggle-music") as HTMLInputElement;
   const shakeToggle = $("toggle-shake") as HTMLInputElement;
   soundToggle.checked = save.sound;
+  musicToggle.checked = save.music;
   shakeToggle.checked = save.shake;
   soundToggle.addEventListener("change", () => {
     save.sound = soundToggle.checked;
     sound.enabled = save.sound;
     if (!save.sound) sound.stopAmbient();
+    persistSave(save);
+  });
+  musicToggle.addEventListener("change", () => {
+    save.music = musicToggle.checked;
+    music.setEnabled(save.music);
     persistSave(save);
   });
   shakeToggle.addEventListener("change", () => {
@@ -127,8 +147,13 @@ async function boot(): Promise<void> {
       card.innerHTML =
         `<div class="mn">${open ? "" : "🔒 "}${m.name}</div>` +
         `<div class="md">${open ? m.desc : `Reach ${LEAGUES[m.unlockLeague]} to unlock`}</div>`;
-      if (open && save.map !== m.id) {
+      if (open) {
         card.addEventListener("click", () => {
+          // Tapping the map you're already on is the express lane into the match.
+          if (save.map === m.id) {
+            startMatch(pendingZen);
+            return;
+          }
           save.map = m.id;
           persistSave(save);
           renderMaps();
@@ -137,7 +162,6 @@ async function boot(): Promise<void> {
       holder.appendChild(card);
     }
   };
-  renderMaps();
 
   // ---------- Locker (equip unlocked cosmetics) ----------
   const SWATCH: Record<string, string> = {
@@ -249,6 +273,18 @@ async function boot(): Promise<void> {
     el.classList.add("hidden");
     home.classList.remove("hidden");
   };
+
+  // The overflow drawer behind "MORE" — keeps the home screen to one button row.
+  const setMoreOpen = (open: boolean) => {
+    moreRow.hidden = !open;
+    moreBtn.setAttribute("aria-expanded", String(open));
+  };
+  moreBtn.addEventListener("click", () => setMoreOpen(moreRow.hidden));
+
+  $("open-help").addEventListener("click", () => openPanel(helpPanel));
+  $("help-back").addEventListener("click", () => closePanel(helpPanel));
+  $("open-settings").addEventListener("click", () => openPanel(settingsPanel));
+  $("settings-back").addEventListener("click", () => closePanel(settingsPanel));
   $("open-locker").addEventListener("click", () => {
     renderLocker();
     openPanel(locker);
@@ -295,10 +331,11 @@ async function boot(): Promise<void> {
       persistSave(save);
       sound.enabled = save.sound;
       sound.popStyle = unlocked(save.popStyle, save.xp) ? save.popStyle : "";
+      music.setEnabled(save.music);
       soundToggle.checked = save.sound;
+      musicToggle.checked = save.music;
       shakeToggle.checked = save.shake;
       renderLadder("ladder-home", "progress-home");
-      renderMaps();
       updateXp();
       renderStats();
     } catch {
@@ -313,6 +350,7 @@ async function boot(): Promise<void> {
     pauseBtn.style.display = game?.pausable && !paused ? "flex" : "none";
     // Zen sessions can be wrapped up early from the pause menu.
     ($("finish") as HTMLButtonElement).hidden = !zenMode;
+    music.setDucked(paused);
   };
 
   // Go fullscreen on touch devices (must run inside a user-gesture handler).
@@ -337,17 +375,42 @@ async function boot(): Promise<void> {
   // Zen, daily, or match — remembered so "Restart"/"Play Again" repeat the same mode (M5, M10).
   let zenMode = false;
   let dailyMode = false;
+  /** Which mode the map picker is currently choosing a map for. */
+  let pendingZen = false;
+
+  const hideOverlays = () => {
+    for (const el of [
+      home,
+      results,
+      pauseOverlay,
+      locker,
+      statsPanel,
+      dailyPanel,
+      mapSelect,
+      helpPanel,
+      settingsPanel,
+    ]) {
+      el.classList.add("hidden");
+    }
+  };
+
+  // PLAY and ZEN both land here first — the map list moved off the home screen
+  // so the menu fits a landscape phone.
+  const openMapSelect = (zen: boolean) => {
+    pendingZen = zen;
+    $("mapselect-mode").textContent = zen
+      ? "🧘 Zen — no clock, no rivals, just cleaning"
+      : `🏆 League match — 2:00 · ${PLAYER_LIVES} lives · ${BOT_COUNT} rivals`;
+    renderMaps();
+    setMoreOpen(false);
+    openPanel(mapSelect);
+  };
 
   const startMatch = (zen: boolean) => {
     zenMode = zen;
     dailyMode = false;
     tryFullscreen();
-    home.classList.add("hidden");
-    results.classList.add("hidden");
-    pauseOverlay.classList.add("hidden");
-    locker.classList.add("hidden");
-    statsPanel.classList.add("hidden");
-    dailyPanel.classList.add("hidden");
+    hideOverlays();
     game?.destroy();
     game = new Game(app, input, sound, {
       league: save.league,
@@ -361,6 +424,7 @@ async function boot(): Promise<void> {
     });
     game.play();
     setPauseUi(false);
+    music.play("game");
   };
 
   // Fixed per-day seed on the canonical map — everyone sees the same layout
@@ -369,12 +433,7 @@ async function boot(): Promise<void> {
     zenMode = false;
     dailyMode = true;
     tryFullscreen();
-    home.classList.add("hidden");
-    results.classList.add("hidden");
-    pauseOverlay.classList.add("hidden");
-    locker.classList.add("hidden");
-    statsPanel.classList.add("hidden");
-    dailyPanel.classList.add("hidden");
+    hideOverlays();
     game?.destroy();
     game = new Game(app, input, sound, {
       league: save.league,
@@ -388,24 +447,28 @@ async function boot(): Promise<void> {
     });
     game.play();
     setPauseUi(false);
+    music.play("game");
   };
 
   const quitToMenu = () => {
     game?.destroy();
     game = null;
     dailyMode = false;
-    pauseOverlay.classList.add("hidden");
     // Results sits after home in the DOM, so leaving it visible would paint
     // over the menu — this is why the Menu button used to "do nothing".
-    results.classList.add("hidden");
+    hideOverlays();
     pauseBtn.style.display = "none";
     renderLadder("ladder-home", "progress-home");
-    renderMaps();
+    setMoreOpen(false);
+    music.setDucked(false);
+    music.play("main");
     home.classList.remove("hidden");
   };
 
   const showResults = (r: MatchResult) => {
     pauseBtn.style.display = "none";
+    music.setDucked(false);
+    music.play("main");
     save.matchesPlayed++;
 
     // Zen doesn't touch the ladder or best score; competitive matches do.
@@ -556,8 +619,10 @@ async function boot(): Promise<void> {
     }
   };
 
-  $("play").addEventListener("click", () => startMatch(false));
-  $("zen").addEventListener("click", () => startMatch(true));
+  $("play").addEventListener("click", () => openMapSelect(false));
+  $("zen").addEventListener("click", () => openMapSelect(true));
+  $("mapselect-start").addEventListener("click", () => startMatch(pendingZen));
+  $("mapselect-back").addEventListener("click", () => closePanel(mapSelect));
   $("daily-play").addEventListener("click", startDaily);
   $("again").addEventListener("click", () => (dailyMode ? startDaily() : startMatch(zenMode)));
   $("menu").addEventListener("click", quitToMenu);
@@ -571,21 +636,27 @@ async function boot(): Promise<void> {
     game?.finish();
   });
 
+  const subPanels = [locker, statsPanel, dailyPanel, mapSelect, helpPanel, settingsPanel];
+
   window.addEventListener("keydown", (e) => {
     if (e.repeat) return;
     if (e.code === "Escape") {
-      if (isOpen(locker)) closePanel(locker);
-      else if (isOpen(statsPanel)) closePanel(statsPanel);
-      else if (isOpen(dailyPanel)) closePanel(dailyPanel);
+      const open = subPanels.find(isOpen);
+      if (open) closePanel(open);
       else togglePause();
       return;
     }
     if (e.code !== "Enter" && e.code !== "Space") return;
-    if (isOpen(locker) || isOpen(statsPanel) || isOpen(dailyPanel)) return;
+    // Enter/Space confirms the highlighted map; elsewhere in a sub-panel it does nothing.
+    if (isOpen(mapSelect)) {
+      startMatch(pendingZen);
+      return;
+    }
+    if (subPanels.some(isOpen)) return;
     if (isOpen(pauseOverlay)) togglePause();
-    // From results, repeat the last mode; from home, start a normal match.
+    // From results, repeat the last mode; from home, go pick a map.
     else if (isOpen(results)) dailyMode ? startDaily() : startMatch(zenMode);
-    else if (isOpen(home)) startMatch(false);
+    else if (isOpen(home)) openMapSelect(false);
   });
 
   // Auto-pause when the tab goes to the background mid-match.
@@ -594,11 +665,17 @@ async function boot(): Promise<void> {
       game.pause();
       setPauseUi(true);
     }
+    // Don't keep serenading a backgrounded tab.
+    music.setDucked(document.hidden || (game?.paused ?? false));
   });
+
+  // Menu bed starts here; autoplay policy usually defers it to the first tap.
+  music.play("main");
 
   // Debug handles (harmless in prod; stripped when we add a build flag later).
   (window as unknown as Record<string, unknown>).__app = app;
   (window as unknown as Record<string, unknown>).__game = () => game;
+  (window as unknown as Record<string, unknown>).__music = music;
 }
 
 void boot();
