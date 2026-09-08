@@ -8,6 +8,9 @@ export interface SaveData {
   sound: boolean;
   /** Looping background music (separate from the sound-effects toggle). */
   music: boolean;
+  /** Stepped channel levels, 0..10 (0 = silent). Preserved across the on/off toggles. */
+  soundVolume: number;
+  musicVolume: number;
   /** Master mute from the home-screen corner button; overrides both channels without clobbering them. */
   muted: boolean;
   shake: boolean;
@@ -47,6 +50,8 @@ export const DEFAULT_SAVE: SaveData = {
   bestScore: 0,
   sound: true,
   music: true,
+  soundVolume: 10,
+  musicVolume: 10,
   muted: false,
   shake: true,
   installDismissed: false,

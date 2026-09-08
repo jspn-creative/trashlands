@@ -512,6 +512,47 @@
       accent-color: var(--green);
     }
 
+    .sliders {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      background: rgba(0, 0, 0, 0.32);
+      border-radius: 16px;
+      padding: 8px 18px;
+      cursor: pointer;
+    }
+
+    .slider-row input[type="range"] {
+      width: min(160px, 40vw);
+      accent-color: var(--green);
+      cursor: pointer;
+    }
+
+    .slider-row .val {
+      min-width: 2ch;
+      text-align: right;
+      color: var(--cream);
+      font-weight: 800;
+    }
+
+    .slider-row.disabled {
+      opacity: 0.45;
+    }
+
+    .slider-row.disabled input[type="range"] {
+      cursor: not-allowed;
+    }
+
     .stat-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(130px, 180px));
@@ -972,6 +1013,29 @@
       <label><input type="checkbox" id="toggle-sound" checked /> Sound effects</label>
       <label><input type="checkbox" id="toggle-music" checked /> Music</label>
       <label><input type="checkbox" id="toggle-shake" checked /> Screen shake</label>
+    </div>
+    <div class="sliders">
+      <label class="slider-row" id="sound-slider-row">
+        <span>🔊 Effects <b class="val" id="sound-vol-label">10</b></span>
+        <input type="range" id="slider-sound" min="0" max="10" step="1" value="10" list="vol-ticks" aria-label="Sound effects volume" />
+      </label>
+      <label class="slider-row" id="music-slider-row">
+        <span>🎵 Music <b class="val" id="music-vol-label">10</b></span>
+        <input type="range" id="slider-music" min="0" max="10" step="1" value="10" list="vol-ticks" aria-label="Music volume" />
+      </label>
+      <datalist id="vol-ticks">
+        <option value="0"></option>
+        <option value="1"></option>
+        <option value="2"></option>
+        <option value="3"></option>
+        <option value="4"></option>
+        <option value="5"></option>
+        <option value="6"></option>
+        <option value="7"></option>
+        <option value="8"></option>
+        <option value="9"></option>
+        <option value="10"></option>
+      </datalist>
     </div>
     <div class="btn-row">
       <button id="settings-back" class="secondary" type="button">← Back</button>

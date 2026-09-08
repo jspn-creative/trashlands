@@ -39,13 +39,21 @@ async function boot(): Promise<void> {
   const save: SaveData = await loadSave();
   const sound = new Sound();
   const music = new Music(sound);
+  /** Clamp a persisted level to the 0..10 slider steps (guards old saves + hand-edited imports). */
+  const clampStep = (v: unknown) => Math.min(10, Math.max(0, Math.round(typeof v === "number" && Number.isFinite(v) ? v : 10)));
+  save.soundVolume = clampStep(save.soundVolume);
+  save.musicVolume = clampStep(save.musicVolume);
   // Master mute wins over both channel toggles; clearing it restores them.
   const applyAudioPrefs = () => {
+    sound.setVolume(save.soundVolume / 10);
     sound.enabled = save.sound && !save.muted;
     if (!sound.enabled) sound.stopAmbient();
+    music.setVolume(save.musicVolume / 10);
     music.setEnabled(save.music && !save.muted);
   };
+  sound.setVolume(save.soundVolume / 10);
   sound.enabled = save.sound && !save.muted;
+  music.setVolume(save.musicVolume / 10);
   music.enabled = save.music && !save.muted;
   const input = new Input(document.body, () => {
     sound.unlock();
@@ -69,20 +77,63 @@ async function boot(): Promise<void> {
 
   sound.popStyle = unlocked(save.popStyle, save.xp) ? save.popStyle : "";
 
-  // Settings toggles.
+  // Settings toggles + stepped volume sliders.
   const soundToggle = $("toggle-sound") as HTMLInputElement;
   const musicToggle = $("toggle-music") as HTMLInputElement;
   const shakeToggle = $("toggle-shake") as HTMLInputElement;
+  const soundSlider = $("slider-sound") as HTMLInputElement;
+  const musicSlider = $("slider-music") as HTMLInputElement;
+  const soundVolLabel = $("sound-vol-label");
+  const musicVolLabel = $("music-vol-label");
+  const soundSliderRow = $("sound-slider-row");
+  const musicSliderRow = $("music-slider-row");
+  const renderSliders = () => {
+    soundSlider.value = String(save.soundVolume);
+    musicSlider.value = String(save.musicVolume);
+    soundVolLabel.textContent = String(save.soundVolume);
+    musicVolLabel.textContent = String(save.musicVolume);
+    soundSlider.disabled = !save.sound;
+    musicSlider.disabled = !save.music;
+    soundSliderRow.classList.toggle("disabled", !save.sound);
+    musicSliderRow.classList.toggle("disabled", !save.music);
+  };
   soundToggle.checked = save.sound;
   musicToggle.checked = save.music;
   shakeToggle.checked = save.shake;
+  renderSliders();
   soundToggle.addEventListener("change", () => {
     save.sound = soundToggle.checked;
     applyAudioPrefs();
+    renderSliders();
     persistSave(save);
   });
   musicToggle.addEventListener("change", () => {
     save.music = musicToggle.checked;
+    applyAudioPrefs();
+    renderSliders();
+    persistSave(save);
+  });
+  // `input` for live loudness, `change` to persist + preview the step.
+  soundSlider.addEventListener("input", () => {
+    save.soundVolume = clampStep(Number(soundSlider.value));
+    soundVolLabel.textContent = String(save.soundVolume);
+    applyAudioPrefs();
+  });
+  soundSlider.addEventListener("change", () => {
+    save.soundVolume = clampStep(Number(soundSlider.value));
+    renderSliders();
+    applyAudioPrefs();
+    persistSave(save);
+    if (sound.enabled) sound.pop(2, 1);
+  });
+  musicSlider.addEventListener("input", () => {
+    save.musicVolume = clampStep(Number(musicSlider.value));
+    musicVolLabel.textContent = String(save.musicVolume);
+    applyAudioPrefs();
+  });
+  musicSlider.addEventListener("change", () => {
+    save.musicVolume = clampStep(Number(musicSlider.value));
+    renderSliders();
     applyAudioPrefs();
     persistSave(save);
   });
@@ -323,11 +374,14 @@ async function boot(): Promise<void> {
       }
       persistSave(save);
       sound.popStyle = unlocked(save.popStyle, save.xp) ? save.popStyle : "";
+      save.soundVolume = clampStep(save.soundVolume);
+      save.musicVolume = clampStep(save.musicVolume);
       applyAudioPrefs();
       renderMute();
       soundToggle.checked = save.sound;
       musicToggle.checked = save.music;
       shakeToggle.checked = save.shake;
+      renderSliders();
       renderLadder("ladder-home", "progress-home");
       updateXp();
       renderStats();

@@ -36,6 +36,8 @@ interface TrackState {
 
 export class Music {
   enabled = true;
+  /** Music bed level, 0..1 — driven by the settings stepped slider. */
+  volume = 1;
 
   private readonly sound: Sound;
   private readonly states = new Map<TrackId, TrackState>();
@@ -58,7 +60,15 @@ export class Music {
   }
 
   private target(): number {
-    return this.ducked ? FULL * DUCKED : FULL;
+    return FULL * this.volume * (this.ducked ? DUCKED : 1);
+  }
+
+  /** Stepped slider level 0..1; re-ramps the live bed so drags are heard immediately. */
+  setVolume(v: number): void {
+    this.volume = Math.min(1, Math.max(0, v));
+    if (!this.enabled || !this.current) return;
+    const st = this.state(this.current);
+    if (st.gain) this.fadeGain(st.gain, this.target());
   }
 
   private ensureGain(track: TrackId, ctx: AudioContext): GainNode {

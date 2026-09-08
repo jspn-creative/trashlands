@@ -1,19 +1,40 @@
 /** Tiny synth effects — no audio assets needed for v1. */
 export class Sound {
   enabled = true;
+  /** Master SFX level, 0..1 — driven by the settings stepped slider. */
+  volume = 1;
   /** "" = classic pops; "bubble" = the blorpy set (M3); "clang" = scrap-metal set (M12). */
   popStyle = "";
   private ctx: AudioContext | null = null;
   private noiseBuf: AudioBuffer | null = null;
   private ambient: { src: AudioBufferSourceNode; lfo: OscillatorNode } | null = null;
+  private master: GainNode | null = null;
 
   unlock(): void {
     if (!this.ctx) {
       this.ctx = new AudioContext();
     }
+    if (!this.master) {
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.volume;
+      this.master.connect(this.ctx.destination);
+    }
     if (this.ctx.state === "suspended") {
       void this.ctx.resume();
     }
+  }
+
+  /** Stepped slider level 0..1; takes effect immediately, even before first unlock. */
+  setVolume(v: number): void {
+    this.volume = Math.min(1, Math.max(0, v));
+    if (this.master && this.ctx) {
+      this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Everything funnels through the master gain so the slider scales every effect. */
+  private output(ctx: AudioContext): AudioNode {
+    return this.master ?? ctx.destination;
   }
 
   /** Raw context for callers (Music) that must keep playing regardless of `enabled`, unlike `ready()`. */
@@ -44,7 +65,7 @@ export class Sound {
     osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), t + dur);
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.02);
-    osc.connect(gain).connect(ctx.destination);
+    osc.connect(gain).connect(this.output(ctx));
     osc.start(t);
     osc.stop(t + dur + 0.05);
   }
@@ -69,7 +90,7 @@ export class Sound {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(filter).connect(gain).connect(ctx.destination);
+    src.connect(filter).connect(gain).connect(this.output(ctx));
     src.start(t);
     src.stop(t + dur);
   }
@@ -166,7 +187,7 @@ export class Sound {
     const lfoGain = ctx.createGain();
     lfoGain.gain.value = 0.011;
     lfo.connect(lfoGain).connect(gain.gain);
-    src.connect(filter).connect(gain).connect(ctx.destination);
+    src.connect(filter).connect(gain).connect(this.output(ctx));
     src.start();
     lfo.start();
     this.ambient = { src, lfo };
@@ -273,7 +294,7 @@ export class Sound {
     gain.gain.linearRampToValueAtTime(0.09, t + 0.1);
     gain.gain.setValueAtTime(0.09, t + 1.0);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 1.3);
-    osc.connect(gain).connect(ctx.destination);
+    osc.connect(gain).connect(this.output(ctx));
     osc.start(t);
     lfo.start(t);
     osc.stop(t + 1.35);
