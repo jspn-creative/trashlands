@@ -1,5 +1,7 @@
 // Generates the PWA icons (public/icons/*.png) with zero dependencies:
-// a minimal PNG encoder + a parametric drawing of the dirt blob.
+// a minimal PNG encoder + a rasterization of the favicon.svg dirt-blob mascot
+// (green square, brown blob, white eyes, smile). Keep this in sync with
+// public/favicon.svg or Home Screen icons will drift from the tab favicon.
 // Run: node scripts/gen-icons.mjs
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -50,89 +52,176 @@ function encodePng(size, rgba) {
   ]);
 }
 
-// ---- drawing ----
-
-function mulberry32(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// ---- drawing (mirrors public/favicon.svg, viewBox 0 0 64 64) ----
 
 const hex = (c) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
 
-/** Draw the icon: green ground, brown dirt blob with blotches + highlight. */
-function drawIcon(size, blobScale) {
-  const px = Buffer.alloc(size * size * 4);
-  const c = size / 2;
-  const R = size * blobScale;
-  const rng = mulberry32(1337);
+const GREEN = hex(0x9be86f);
+const DIRT = hex(0x6f4e27);
+const RIM = hex(0x4a3418);
+const BLOTCH = hex(0x55391c);
+const FLECK = hex(0x8a6a3f);
+const DARK = hex(0x2f2418);
+const WHITE = [255, 255, 255];
 
-  const bgTop = hex(0x9be86f);
-  const bgBot = hex(0x55803c);
-  const dirt = hex(0x6f4e27);
-  const rim = hex(0x4a3418);
-  const blotch = hex(0x55391c);
-  const fleck = hex(0x8a6a3f);
+const EYES = [25.7, 38.9]; // cx pair; cy 25.4, rx 4.7, ry 5.7
+const PUPILS = [
+  [26.7, 26.3],
+  [39.9, 26.3],
+]; // r 2.4
+const GLINTS = [
+  [27.5, 25.4],
+  [40.7, 25.4],
+]; // r 0.8
 
-  const blotches = [];
-  for (let i = 0; i < 8; i++) {
-    const ang = rng() * Math.PI * 2;
-    const dist = (0.12 + rng() * 0.5) * R;
-    blotches.push({
-      x: c + Math.cos(ang) * dist,
-      y: c + Math.sin(ang) * dist,
-      r: (0.12 + rng() * 0.16) * R,
-      col: blotch,
-    });
+// Smile path M28.2,35.5 c2.9,2.5 5.9,2.5 8.8,0 as a cubic.
+const SMILE = [28.2, 35.5, 31.1, 38.0, 34.1, 38.0, 37.0, 35.5];
+const SMILE_PTS = (() => {
+  const [x0, y0, x1, y1, x2, y2, x3, y3] = SMILE;
+  const pts = [];
+  const N = 40;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const mt = 1 - t;
+    pts.push([
+      mt * mt * mt * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t * t * t * x3,
+      mt * mt * mt * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t * t * t * y3,
+    ]);
   }
-  for (let i = 0; i < 6; i++) {
-    const ang = rng() * Math.PI * 2;
-    const dist = (0.2 + rng() * 0.55) * R;
-    blotches.push({
-      x: c + Math.cos(ang) * dist,
-      y: c + Math.sin(ang) * dist,
-      r: (0.04 + rng() * 0.05) * R,
-      col: fleck,
-    });
+  return pts;
+})();
+
+function smileDist(gx, gy) {
+  let m = Infinity;
+  for (const [px, py] of SMILE_PTS) {
+    const d = Math.hypot(gx - px, gy - py);
+    if (d < m) m = d;
   }
+  return m;
+}
 
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4;
-      // vertical green gradient background (full bleed for maskable)
-      const t = y / size;
-      let r = bgTop[0] + (bgBot[0] - bgTop[0]) * t;
-      let g = bgTop[1] + (bgBot[1] - bgTop[1]) * t;
-      let b = bgTop[2] + (bgBot[2] - bgTop[2]) * t;
+/**
+ * Rasterize the mascot. `zoom` shrinks the artwork toward the center —
+ * 1 for regular icons, 0.8 for the maskable safe zone. Background is a
+ * full-bleed square (OSes apply their own masking; no transparency).
+ */
+function drawIcon(size, zoom) {
+  const SS = 2; // supersample factor for smooth edges
+  const W = size * SS;
+  const S = ((W / 64) * zoom);
+  const off = (W - 64 * S) / 2;
+  const big = Buffer.alloc(W * W * 4);
 
-      const d = Math.hypot(x - c, y - c);
-      if (d < R) {
-        if (d > R * 0.92) {
-          [r, g, b] = rim;
+  for (let y = 0; y < W; y++) {
+    const gy = (y + 0.5 - off) / S;
+    for (let x = 0; x < W; x++) {
+      const gx = (x + 0.5 - off) / S;
+      let r = GREEN[0];
+      let g = GREEN[1];
+      let b = GREEN[2];
+
+      // soft ground shadow under the blob (black, ~10%)
+      const ex = (gx - 33.3) / 23.9;
+      const ey = (gy - 55.6) / 4.4;
+      if (ex * ex + ey * ey < 1) {
+        r = Math.round(r * 0.9);
+        g = Math.round(g * 0.9);
+        b = Math.round(b * 0.9);
+      }
+
+      // blob disc: r 23.9 + 1.5px centered stroke ring
+      const d = Math.hypot(gx - 32, gy - 30.4);
+      if (d <= 25.4) {
+        if (d >= 22.4) {
+          r = RIM[0];
+          g = RIM[1];
+          b = RIM[2];
         } else {
-          [r, g, b] = dirt;
-          for (const bl of blotches) {
-            if (Math.hypot(x - bl.x, y - bl.y) < bl.r) [r, g, b] = bl.col;
+          r = DIRT[0];
+          g = DIRT[1];
+          b = DIRT[2];
+          // translucent dirt blotches (SVG opacity .3)
+          if (Math.hypot(gx - 23.2, gy - 39.2) < 5.7 || Math.hypot(gx - 42.1, gy - 35.5) < 4.4) {
+            r = Math.round(r * 0.7 + BLOTCH[0] * 0.3);
+            g = Math.round(g * 0.7 + BLOTCH[1] * 0.3);
+            b = Math.round(b * 0.7 + BLOTCH[2] * 0.3);
           }
-          // soft top-left highlight
-          const hd = Math.hypot(x - (c - R * 0.28), y - (c - R * 0.32));
-          if (hd < R * 0.34) {
-            r += (255 - r) * 0.1;
-            g += (255 - g) * 0.1;
-            b += (255 - b) * 0.1;
+          // light flecks
+          if (Math.hypot(gx - 38.3, gy - 45.5) < 2.5 || Math.hypot(gx - 19.4, gy - 27.9) < 1.9) {
+            r = FLECK[0];
+            g = FLECK[1];
+            b = FLECK[2];
+          }
+          // eyes: white fill + 1.5px rim stroke
+          let eyeFill = false;
+          let eyeStroke = false;
+          for (const cx of EYES) {
+            const q = Math.sqrt(((gx - cx) / 4.7) ** 2 + ((gy - 25.4) / 5.7) ** 2);
+            if (q < 1) eyeFill = true;
+            if (Math.abs(q - 1) * 4.7 <= 0.75) eyeStroke = true;
+          }
+          if (eyeStroke) {
+            r = RIM[0];
+            g = RIM[1];
+            b = RIM[2];
+          } else if (eyeFill) {
+            r = WHITE[0];
+            g = WHITE[1];
+            b = WHITE[2];
+          }
+          // pupils + glints
+          for (const [px, py] of PUPILS) {
+            if (Math.hypot(gx - px, gy - py) < 2.4) {
+              r = DARK[0];
+              g = DARK[1];
+              b = DARK[2];
+            }
+          }
+          for (const [px, py] of GLINTS) {
+            if (Math.hypot(gx - px, gy - py) < 0.8) {
+              r = WHITE[0];
+              g = WHITE[1];
+              b = WHITE[2];
+            }
+          }
+          // smile: 3px stroke around the cubic
+          if (gx > 26 && gx < 39.2 && gy > 33.8 && gy < 39.7 && smileDist(gx, gy) <= 1.5) {
+            r = RIM[0];
+            g = RIM[1];
+            b = RIM[2];
           }
         }
       }
 
-      px[i] = Math.round(r);
-      px[i + 1] = Math.round(g);
-      px[i + 2] = Math.round(b);
-      px[i + 3] = 255;
+      const i = (y * W + x) * 4;
+      big[i] = Math.round(r);
+      big[i + 1] = Math.round(g);
+      big[i + 2] = Math.round(b);
+      big[i + 3] = 255;
+    }
+  }
+
+  // box-downsample to the target size
+  const px = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      for (let dy = 0; dy < SS; dy++) {
+        for (let dx = 0; dx < SS; dx++) {
+          const i = ((y * SS + dy) * W + (x * SS + dx)) * 4;
+          r += big[i];
+          g += big[i + 1];
+          b += big[i + 2];
+        }
+      }
+      const o = (y * size + x) * 4;
+      const n = SS * SS;
+      px[o] = Math.round(r / n);
+      px[o + 1] = Math.round(g / n);
+      px[o + 2] = Math.round(b / n);
+      px[o + 3] = 255;
     }
   }
   return px;
@@ -140,12 +229,12 @@ function drawIcon(size, blobScale) {
 
 mkdirSync(OUT, { recursive: true });
 const targets = [
-  ["icon-192.png", 192, 0.4],
-  ["icon-512.png", 512, 0.4],
-  ["icon-maskable-512.png", 512, 0.32], // safe-zone padding for maskable
-  ["apple-touch-icon.png", 180, 0.4],
+  ["icon-192.png", 192, 1],
+  ["icon-512.png", 512, 1],
+  ["icon-maskable-512.png", 512, 0.8], // padding keeps the face inside the mask safe zone
+  ["apple-touch-icon.png", 180, 1],
 ];
-for (const [name, size, scale] of targets) {
-  writeFileSync(join(OUT, name), encodePng(size, drawIcon(size, scale)));
+for (const [name, size, zoom] of targets) {
+  writeFileSync(join(OUT, name), encodePng(size, drawIcon(size, zoom)));
   console.log(`wrote public/icons/${name}`);
 }
