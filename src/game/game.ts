@@ -978,6 +978,8 @@ export class Game {
     this.ringPhase += dt * 4;
     const pulse = 1 + Math.sin(this.ringPhase) * 0.045;
     const myCls = classForMass(this.player.mass);
+    // Darken trash the player isn't big enough to eat yet.
+    this.field.setPlayerClass(myCls);
     this.ringG.clear();
     for (const [bot, label] of this.botLabels) {
       label.visible = bot.alive;

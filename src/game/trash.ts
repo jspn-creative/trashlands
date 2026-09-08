@@ -56,12 +56,18 @@ const SPAWN_CLEAR_RADIUS = 150;
 const ZONE_COUNT = 6;
 const ZONE_RADIUS = 330;
 
+/** Full-bright tint for edible trash; darkened tint for trash above the player's class. */
+const EDIBLE_TINT = 0xffffff;
+const TOO_BIG_TINT = 0xacacac;
+
 export class TrashField {
   readonly items: TrashItem[] = [];
   readonly zones: Zone[] = [];
   private readonly grid = new Map<string, TrashItem[]>();
   private readonly texturesByClass: Texture[][];
   private readonly layer: Container;
+  /** Player size class used to tint inedible trash dark (updated per frame). */
+  private playerCls = 1;
 
   constructor(
     renderer: Renderer,
@@ -75,6 +81,23 @@ export class TrashField {
     this.texturesByClass = cachedTextures;
     this.layer = layer;
     this.spawnAll(layer, rng);
+    for (const item of this.items) this.applyTint(item);
+  }
+
+  /**
+   * Darken trash the player can't eat yet. Cheap: skips work when the class
+   * hasn't changed, so calling it every frame is safe.
+   */
+  setPlayerClass(cls: number): void {
+    if (cls === this.playerCls) return;
+    this.playerCls = cls;
+    for (const item of this.items) {
+      if (item.alive) this.applyTint(item);
+    }
+  }
+
+  private applyTint(item: TrashItem): void {
+    item.sprite.tint = item.cls <= this.playerCls ? EDIBLE_TINT : TOO_BIG_TINT;
   }
 
   /** Drop a single item into the world mid-match (skirmish shedding). */
@@ -101,6 +124,7 @@ export class TrashField {
       // Skirmish drops never join zones — a cleaned zone stays cleaned.
       zone: -1,
     };
+    this.applyTint(item);
     this.items.push(item);
     this.cellFor(x, y).push(item);
   }

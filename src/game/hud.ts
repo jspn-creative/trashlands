@@ -88,6 +88,9 @@ export class Hud {
         fill: 0xfff3b0,
         stroke: { color: 0x2f2418, width: 8 },
         align: "center",
+        wordWrap: true,
+        wordWrapWidth: 600,
+        breakWords: false,
         dropShadow: { distance: 4, angle: Math.PI / 2, alpha: 0.35, blur: 2 },
       }),
     });
@@ -323,6 +326,23 @@ export class Hud {
       if (a >= this.announceDur) {
         this.announceText.visible = false;
       } else {
+        // Responsive headings: shrink and wrap on narrow screens so long
+        // notices like "VOLLEYBALL COURT CLEANED! +200" fit on phones.
+        const targetSize = screenW < 380 ? 28 : screenW < NARROW ? 34 : 44;
+        const targetWrap = Math.max(280, screenW - 48);
+        const aStyle = this.announceText.style;
+        if (aStyle.fontSize !== targetSize) {
+          aStyle.fontSize = targetSize;
+          aStyle.stroke = {
+            color: 0x2f2418,
+            width: Math.max(5, Math.round(targetSize * 0.18)),
+          };
+          aStyle.lineHeight = Math.round(targetSize * 1.12);
+        }
+        if (aStyle.wordWrapWidth !== targetWrap) {
+          aStyle.wordWrap = true;
+          aStyle.wordWrapWidth = targetWrap;
+        }
         this.announceText.position.set(screenW / 2, screenH * 0.34);
         this.announceText.alpha = Math.min(1, (this.announceDur - a) / 0.4);
         this.announceText.scale.set(Math.min(1, 0.7 + a * 3));
